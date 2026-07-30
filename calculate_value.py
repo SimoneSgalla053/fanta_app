@@ -52,7 +52,7 @@ def calculate_mean_for_remaining_players() -> float:
     return mean_for_player
 
 
-def calculate_maximum_price_for_player(name: str, role: str) -> float, float:
+def calculate_maximum_price_for_player(name: str, role: str) -> tuple[float, float]:
     """
     Calculate the maximum price for a player based on the mean rating for the remaining players.
 
@@ -64,16 +64,69 @@ def calculate_maximum_price_for_player(name: str, role: str) -> float, float:
     player_rating = players_db.execute(
         "SELECT rating, role FROM players WHERE name = ?", (name,)
     ).fetchone()
-    player_value = player_rating[0] * (calculate_mean_for_remaining_players()/6) * role_multiplier
+    player_value = player_rating[0] * (calculate_mean_for_remaining_players() / 6) * role_multiplier
 
-    my_remaining_credits_for_role = MAX_CREDIT_PER_ROLE[role] - teams_db.execute(
-        "SELECT SUM(paid_value) FROM teams.team_simone WHERE role = ?", (role,)
-    ).fetchone()[0] or 0
+    my_remaining_credits_for_role = (
+        MAX_CREDIT_PER_ROLE[role]
+        - teams_db.execute(
+            "SELECT SUM(paid_value) FROM teams.team_simone WHERE role = ?", (role,)
+        ).fetchone()[0]
+        or 0
+    )
 
-    my_remaining_players_for_role = NUMBER_OF_PLAYERS_PER_ROLE[role] - teams_db.execute(
-        "SELECT COUNT(*) FROM teams.team_simone WHERE role = ?", (role,)
-    ).fetchone()[0]
+    my_remaining_players_for_role = (
+        NUMBER_OF_PLAYERS_PER_ROLE[role]
+        - teams_db.execute(
+            "SELECT COUNT(*) FROM teams.team_simone WHERE role = ?", (role,)
+        ).fetchone()[0]
+    )
 
-    my_max_price = player_rating[0] * (calculate_mean_for_remaining_players()/6) * (my_remaining_credits_for_role/my_remaining_players_for_role)
+    my_max_price = (
+        player_rating[0]
+        * (calculate_mean_for_remaining_players() / 6)
+        * (my_remaining_credits_for_role / my_remaining_players_for_role)
+    )
 
     return player_value, my_max_price
+
+
+def insert_player_for_team(team: str, name: str, role: str, paid_value: float) -> None:
+    """
+    Insert a player into the team database.
+
+    Args:
+        name (str): The name of the player.
+        role (str): The role of the player.
+        paid_value (float): The paid value for the player.
+    """
+    teams_db.execute(
+        f"INSERT INTO teams.{team} (name, role, paid_value) VALUES (?, ?, ?)",
+        (name, role, paid_value),
+    )
+    players_db.execute(f"DELETE FROM players.{role} WHERE name = ?", (name,))
+    teams_db.commit()
+
+
+def get_players_for_team(team: str) -> list[tuple[str, str, float]]:
+    """
+    Get the players for a team from the database.
+
+    Args:
+        team (str): The name of the team.
+
+    Returns:
+        list[tuple[str, str, float]]: A list of players with their name, role, and paid value.
+    """
+    return teams_db.execute(f"SELECT name, role, paid_value FROM teams.{team}").fetchall()
+
+
+def get_remaining_players_for_role(role: str) -> list[tuple[str, str, int]]:
+    """
+    Get the remaining players for a specific role from the database.
+
+    Args:
+        role (str): The role to check.
+    Returns:
+        list[tuple[str, str, int]]: A list of remaining players for the specified role.
+    """
+    return players_db.execute(f"SELECT name, team, rating FROM {role}").fetchall()
