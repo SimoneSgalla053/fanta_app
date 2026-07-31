@@ -2,22 +2,22 @@ MAX_CREDIT_AMOUNT = 500
 TOTAL_CREDITS_AMOUNT = MAX_CREDIT_AMOUNT * 10
 
 NUMBER_OF_PLAYERS_PER_ROLE = {
-    "goalkeeper": 3,
-    "defender": 8,
-    "midfielder": 8,
-    "attacker": 6,
+    "goalkeepers": 3,
+    "defenders": 8,
+    "midfielders": 8,
+    "attackers": 6,
 }
 
 MAX_CREDIT_PER_ROLE = {
-    "goalkeeper": 50,
-    "defender": 50,
-    "midfielder": 100,
-    "attacker": 300,
+    "goalkeepers": 50,
+    "defenders": 50,
+    "midfielders": 100,
+    "attackers": 300,
 }
 
 STANDARD_ROLE_MULTIPLIERS = {
-    "goalkeeper": MAX_CREDIT_PER_ROLE["goalkeeper"]/NUMBER_OF_PLAYERS_PER_ROLE["goalkeeper"]/20,
-    "defender": MAX_CREDIT_PER_ROLE["defender"]/NUMBER_OF_PLAYERS_PER_ROLE["defender"]/20,
-    "midfielder": MAX_CREDIT_PER_ROLE["midfielder"]/NUMBER_OF_PLAYERS_PER_ROLE["midfielder"]/20,
-    "attacker": MAX_CREDIT_PER_ROLE["attacker"]/NUMBER_OF_PLAYERS_PER_ROLE["attacker"]/20,
+    "goalkeepers": MAX_CREDIT_PER_ROLE["goalkeepers"]/NUMBER_OF_PLAYERS_PER_ROLE["goalkeepers"]/20,
+    "defenders": MAX_CREDIT_PER_ROLE["defenders"]/NUMBER_OF_PLAYERS_PER_ROLE["defenders"]/20,
+    "midfielders": MAX_CREDIT_PER_ROLE["midfielders"]/NUMBER_OF_PLAYERS_PER_ROLE["midfielders"]/20,
+    "attackers": MAX_CREDIT_PER_ROLE["attackers"]/NUMBER_OF_PLAYERS_PER_ROLE["attackers"]/20,
 }

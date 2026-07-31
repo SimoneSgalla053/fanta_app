@@ -4,10 +4,10 @@ from config import (
     NUMBER_OF_PLAYERS_PER_ROLE,
     MAX_CREDIT_PER_ROLE,
 )
-from dbm import sqlite3
+import sqlite3
 
-teams_db = sqlite3.connect("teams.db")
-players_db = sqlite3.connect("players.db")
+teams_db = sqlite3.connect("db/teams_dataset/teams.db")
+players_db = sqlite3.connect("db/player_dataset/players.db")
 
 
 def calculate_remaining_credits_for_players() -> float:
@@ -18,12 +18,13 @@ def calculate_remaining_credits_for_players() -> float:
         float: The remaining credits for players.
     """
     remaining_credits = TOTAL_CREDITS_AMOUNT
-    for table in teams_db.execute("SELECT name FROM sqlite_master WHERE type='table';"):
-        if teams_db.execute(f"SELECT COUNT(*) FROM {table[0]}").fetchone()[0] > 25:
+    teams = get_all_teams()
+    for table in teams:
+        if teams_db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] > 25:
             remaining_credits -= 500
         else:
             remaining_credits -= (
-                teams_db.execute(f"SELECT SUM(paid_value) FROM {table[0]}").fetchone()[0] or 0
+                teams_db.execute(f"SELECT SUM(paid_value) FROM {table}").fetchone()[0] or 0
             )
     return remaining_credits
 
@@ -62,32 +63,35 @@ def calculate_maximum_price_for_player(name: str, role: str) -> tuple[float, flo
     """
     role_multiplier = STANDARD_ROLE_MULTIPLIERS.get(role)
     player_rating = players_db.execute(
-        "SELECT rating, role FROM players WHERE name = ?", (name,)
+        f"SELECT rating FROM {role} WHERE name = ?", (name,)
     ).fetchone()
-    player_value = player_rating[0] * (calculate_mean_for_remaining_players() / 6) * role_multiplier
+    player_value = (
+        player_rating[0] * (calculate_mean_for_remaining_players() / 60) * role_multiplier
+    )
 
-    my_remaining_credits_for_role = (
-        MAX_CREDIT_PER_ROLE[role]
-        - teams_db.execute(
-            "SELECT SUM(paid_value) FROM teams.team_simone WHERE role = ?", (role,)
+    my_remaining_credits_for_role = MAX_CREDIT_PER_ROLE[role] - (
+        teams_db.execute(
+            "SELECT SUM(paid_value) FROM team_simo WHERE role = ?", (role,)
         ).fetchone()[0]
         or 0
     )
 
     my_remaining_players_for_role = (
         NUMBER_OF_PLAYERS_PER_ROLE[role]
-        - teams_db.execute(
-            "SELECT COUNT(*) FROM teams.team_simone WHERE role = ?", (role,)
-        ).fetchone()[0]
+        - teams_db.execute("SELECT COUNT(*) FROM team_simo WHERE role = ?", (role,)).fetchone()[0]
     )
 
     my_max_price = (
         player_rating[0]
-        * (calculate_mean_for_remaining_players() / 6)
-        * (my_remaining_credits_for_role / my_remaining_players_for_role)
+        * (calculate_mean_for_remaining_players() / 60)
+        * (
+            my_remaining_credits_for_role
+            / my_remaining_players_for_role
+            / calculate_mean_for_remaining_players()
+        )
     )
 
-    return player_value, my_max_price
+    return round(player_value), round(my_max_price)
 
 
 def insert_player_for_team(team: str, name: str, role: str, paid_value: float) -> None:
@@ -103,11 +107,11 @@ def insert_player_for_team(team: str, name: str, role: str, paid_value: float) -
         f"INSERT INTO teams.{team} (name, role, paid_value) VALUES (?, ?, ?)",
         (name, role, paid_value),
     )
-    players_db.execute(f"DELETE FROM players.{role} WHERE name = ?", (name,))
+    players_db.execute(f"DELETE FROM {role} WHERE name = ?", (name,))
     teams_db.commit()
 
 
-def get_players_for_team(team: str) -> list[tuple[str, str, float]]:
+def get_players_for_team(team: str) -> list[dict]:
     """
     Get the players for a team from the database.
 
@@ -117,16 +121,35 @@ def get_players_for_team(team: str) -> list[tuple[str, str, float]]:
     Returns:
         list[tuple[str, str, float]]: A list of players with their name, role, and paid value.
     """
-    return teams_db.execute(f"SELECT name, role, paid_value FROM teams.{team}").fetchall()
+    team = teams_db.execute(f"SELECT name, role, paid_value FROM {team}").fetchall()
+    team_dict = [
+        {"name": name, "role": role, "paid_value": paid_value} for name, role, paid_value in team
+    ]
+    return team_dict
 
 
-def get_remaining_players_for_role(role: str) -> list[tuple[str, str, int]]:
+def get_remaining_players_for_role(role: str) -> list[dict]:
     """
     Get the remaining players for a specific role from the database.
 
     Args:
         role (str): The role to check.
     Returns:
-        list[tuple[str, str, int]]: A list of remaining players for the specified role.
+        list[dict[str, str, int]]: A list of remaining players for the specified role.
     """
-    return players_db.execute(f"SELECT name, team, rating FROM {role}").fetchall()
+    players = players_db.execute(f"SELECT name, team, rating FROM {role}").fetchall()
+    players_dict = [
+        {"name": name, "team": team, "rating": rating} for name, team, rating in players
+    ]
+    return players_dict
+
+
+def get_all_teams() -> list[str]:
+    """
+    Get all the teams from the database.
+
+    Returns:
+        list[str]: A list of team names.
+    """
+    teams = teams_db.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
+    return [team[0] for team in teams if team[0] != "sqlite_sequence"]
