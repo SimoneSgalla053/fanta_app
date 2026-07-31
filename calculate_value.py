@@ -108,9 +108,12 @@ def insert_player_for_team(team: str, name: str, role: str, paid_value: float) -
         return
 
     for table in teams_db.execute("SELECT name FROM sqlite_master WHERE type='table';"):
-        if teams_db.execute(
-            f"SELECT COUNT(*) FROM {table[0]} WHERE name = ?", (name,)
-        ).fetchone()[0] > 0:
+        if (
+            teams_db.execute(f"SELECT COUNT(*) FROM {table[0]} WHERE name = ?", (name,)).fetchone()[
+                0
+            ]
+            > 0
+        ):
             teams_db.execute(f"DELETE FROM {table[0]} WHERE name = ?", (name,))
             teams_db.commit()
     teams_db.execute(
@@ -162,3 +165,26 @@ def get_all_teams() -> list[str]:
     """
     teams = teams_db.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
     return [team[0] for team in teams if team[0] != "sqlite_sequence"]
+
+
+def get_team_and_price_for_player(name: str, role: str) -> tuple[str, int]:
+    """
+    Get the team for a specific player from the database.
+
+    Args:
+        name (str): The name of the player.
+        role (str): The role of the player.
+    Returns:
+        str: The name of the team the player belongs to, or "unassigned" if not found.
+    """
+    for table in get_all_teams():
+        if (
+            teams_db.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE name = ? AND role = ?", (name, role)
+            ).fetchone()[0]
+            > 0
+        ):
+            return table, (teams_db.execute(
+                f"SELECT paid_value FROM {table} WHERE name = ? AND role = ?", (name, role)
+            ).fetchone()[0] or 0)
+    return "unassigned", 0
