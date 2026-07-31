@@ -50,9 +50,25 @@ def select_team_page():
     ui.link("Back to home", "/").classes("mt-4 block")
 
 
-def goalkeepers_players_page():
-    players = get_remaining_players_for_role("goalkeepers")
+def render_role_page(role: str):
+    """Generic helper function to build and manage role pages with dynamic price recalculation."""
+    players = get_remaining_players_for_role(role)
     team_options = ["unassigned"] + get_all_teams()
+
+    # Dictionary to keep track of (my_max_price_label, player_name) references
+    max_price_labels = {}
+
+    def refresh_all_max_prices():
+        """Recalculates and updates the 'My Max Price' text for every player on screen."""
+        for player_name, label in max_price_labels.items():
+            _, new_max_price = calculate_maximum_price_for_player(player_name, role)
+            label.set_text(str(new_max_price))
+
+    def handle_assignment(team_val: str, player_name: str, player_role: str, paid_val: int):
+        # 1. Update SQLite DB
+        insert_player_for_team(team_val, player_name, player_role, paid_val)
+        # 2. Instantly update all 'My Max Price' labels across the grid
+        refresh_all_max_prices()
 
     with ui.grid(columns=7).classes("w-full items-center p-4 gap-2"):
         # Header
@@ -66,198 +82,58 @@ def goalkeepers_players_page():
 
         # Rows
         for player in players:
-            player_value, my_max_price = calculate_maximum_price_for_player(
-                player.get("name"), "goalkeepers"
-            )
-            ui.label(player.get("name"))
-            ui.label(player.get("role", "goalkeepers"))
+            p_name = player.get("name")
+            p_role = player.get("role", role)
+
+            player_value, my_max_price = calculate_maximum_price_for_player(p_name, role)
+            current_team, current_price = get_team_and_price_for_player(p_name, role)
+
+            ui.label(p_name)
+            ui.label(p_role)
             ui.label(str(player.get("rating", 0)))
             ui.label(str(player_value))
-            ui.label(str(my_max_price))
 
-            paid_input = ui.number(value=player.get("paid_value", 0), precision=0, min=0).classes(
-                "w-24"
-            )
+            # Store label reference for dynamic updates
+            max_price_label = ui.label(str(my_max_price))
+            max_price_labels[p_name] = max_price_label
+
+            paid_input = ui.number(value=current_price or 0, precision=0, min=0).classes("w-24")
 
             select = ui.select(
                 options=team_options,
-                value="unassigned",
-                on_change=lambda e, p=player, inp=paid_input: insert_player_for_team(
-                    e.value,
-                    p.get("name"),
-                    p.get("role", "goalkeepers"),
-                    int(inp.value or 1),
-                ),
+                value=current_team or "unassigned",
             ).classes("w-40")
 
-            paid_input.on_value_change(
-                lambda e, p=player, inp=paid_input, sel=select: insert_player_for_team(
-                    sel.value,
-                    p.get("name"),
-                    p.get("role", "goalkeepers"),
-                    int(inp.value or 1),
+            # Attach change callbacks to both inputs
+            select.on_value_change(
+                lambda e, p=p_name, r=p_role, inp=paid_input: handle_assignment(
+                    e.value, p, r, int(inp.value or 0)
                 )
             )
 
-    ui.link("Back to home", "/")
+            paid_input.on_value_change(
+                lambda e, p=p_name, r=p_role, sel=select: handle_assignment(
+                    sel.value, p, r, int(e.value or 0)
+                )
+            )
+
+    ui.link("Back to home", "/").classes("mt-4 block")
+
+
+def goalkeepers_players_page():
+    render_role_page("goalkeepers")
 
 
 def defenders_players_page():
-    players = get_remaining_players_for_role("defenders")
-    team_options = ["unassigned"] + get_all_teams()
-
-    with ui.grid(columns=7).classes("w-full items-center p-4 gap-2"):
-        # Header
-        ui.label("Name").classes("font-bold")
-        ui.label("Role").classes("font-bold")
-        ui.label("Rating").classes("font-bold")
-        ui.label("Player Value").classes("font-bold")
-        ui.label("My Max Price").classes("font-bold")
-        ui.label("Paid Value").classes("font-bold")
-        ui.label("Assign Team").classes("font-bold")
-
-        # Rows
-        for player in players:
-            player_value, my_max_price = calculate_maximum_price_for_player(
-                player.get("name"), "defenders"
-            )
-            ui.label(player.get("name"))
-            ui.label(player.get("role", "defenders"))
-            ui.label(str(player.get("rating", 0)))
-            ui.label(str(player_value))
-            ui.label(str(my_max_price))
-
-            team, price = get_team_and_price_for_player(player.get("name"), "defenders")
-
-            paid_input = ui.number(value=price, precision=0, min=0).classes(
-                "w-24"
-            )
-
-            select = ui.select(
-                options=team_options,
-                value=team,
-                on_change=lambda e, p=player, inp=paid_input: insert_player_for_team(
-                    e.value,
-                    p.get("name"),
-                    p.get("role", "defenders"),
-                    int(inp.value or 1),
-                ),
-            ).classes("w-40")
-
-            paid_input.on_value_change(
-                lambda e, p=player, inp=paid_input, sel=select: insert_player_for_team(
-                    sel.value,
-                    p.get("name"),
-                    p.get("role", "defenders"),
-                    int(inp.value or 1),
-                )
-            )
-
-    ui.link("Back to home", "/")
+    render_role_page("defenders")
 
 
 def midfielders_players_page():
-    players = get_remaining_players_for_role("midfielders")
-    team_options = ["unassigned"] + get_all_teams()
-
-    with ui.grid(columns=7).classes("w-full items-center p-4 gap-2"):
-        # Header
-        ui.label("Name").classes("font-bold")
-        ui.label("Role").classes("font-bold")
-        ui.label("Rating").classes("font-bold")
-        ui.label("Player Value").classes("font-bold")
-        ui.label("My Max Price").classes("font-bold")
-        ui.label("Paid Value").classes("font-bold")
-        ui.label("Assign Team").classes("font-bold")
-
-        # Rows
-        for player in players:
-            player_value, my_max_price = calculate_maximum_price_for_player(
-                player.get("name"), "midfielders"
-            )
-            ui.label(player.get("name"))
-            ui.label(player.get("role", "midfielders"))
-            ui.label(str(player.get("rating", 0)))
-            ui.label(str(player_value))
-            ui.label(str(my_max_price))
-
-            paid_input = ui.number(value=player.get("paid_value", 0), precision=0, min=0).classes(
-                "w-24"
-            )
-
-            select = ui.select(
-                options=team_options,
-                value="unassigned",
-                on_change=lambda e, p=player, inp=paid_input: insert_player_for_team(
-                    e.value,
-                    p.get("name"),
-                    p.get("role", "midfielders"),
-                    int(inp.value or 1),
-                ),
-            ).classes("w-40")
-
-            paid_input.on_value_change(
-                lambda e, p=player, inp=paid_input, sel=select: insert_player_for_team(
-                    sel.value,
-                    p.get("name"),
-                    p.get("role", "midfielders"),
-                    int(inp.value or 1),
-                )
-            )
-
-    ui.link("Back to home", "/")
+    render_role_page("midfielders")
 
 
 def attackers_players_page():
-    players = get_remaining_players_for_role("attackers")
-    team_options = ["unassigned"] + get_all_teams()
-
-    with ui.grid(columns=7).classes("w-full items-center p-4 gap-2"):
-        # Header
-        ui.label("Name").classes("font-bold")
-        ui.label("Role").classes("font-bold")
-        ui.label("Rating").classes("font-bold")
-        ui.label("Player Value").classes("font-bold")
-        ui.label("My Max Price").classes("font-bold")
-        ui.label("Paid Value").classes("font-bold")
-        ui.label("Assign Team").classes("font-bold")
-
-        # Rows
-        for player in players:
-            player_value, my_max_price = calculate_maximum_price_for_player(
-                player.get("name"), "attackers"
-            )
-            ui.label(player.get("name"))
-            ui.label(player.get("role", "attackers"))
-            ui.label(str(player.get("rating", 0)))
-            ui.label(str(player_value))
-            ui.label(str(my_max_price))
-
-            paid_input = ui.number(value=player.get("paid_value", 0), precision=0, min=0).classes(
-                "w-24"
-            )
-
-            select = ui.select(
-                options=team_options,
-                value="unassigned",
-                on_change=lambda e, p=player, inp=paid_input: insert_player_for_team(
-                    e.value,
-                    p.get("name"),
-                    p.get("role", "attackers"),
-                    int(inp.value or 1),
-                ),
-            ).classes("w-40")
-
-            paid_input.on_value_change(
-                lambda e, p=player, inp=paid_input, sel=select: insert_player_for_team(
-                    sel.value,
-                    p.get("name"),
-                    p.get("role", "attackers"),
-                    int(inp.value or 1),
-                )
-            )
-
-    ui.link("Back to home", "/")
+    render_role_page("attackers")
 
 
 def teams_page(team_name: str):
