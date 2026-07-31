@@ -103,11 +103,20 @@ def insert_player_for_team(team: str, name: str, role: str, paid_value: float) -
         role (str): The role of the player.
         paid_value (float): The paid value for the player.
     """
+
+    if team == "unassigned":
+        return
+
+    for table in teams_db.execute("SELECT name FROM sqlite_master WHERE type='table';"):
+        if teams_db.execute(
+            f"SELECT COUNT(*) FROM {table[0]} WHERE name = ?", (name,)
+        ).fetchone()[0] > 0:
+            teams_db.execute(f"DELETE FROM {table[0]} WHERE name = ?", (name,))
+            teams_db.commit()
     teams_db.execute(
-        f"INSERT INTO teams.{team} (name, role, paid_value) VALUES (?, ?, ?)",
+        f"INSERT INTO {team} (name, role, paid_value) VALUES (?, ?, ?)",
         (name, role, paid_value),
     )
-    players_db.execute(f"DELETE FROM {role} WHERE name = ?", (name,))
     teams_db.commit()
 
 
