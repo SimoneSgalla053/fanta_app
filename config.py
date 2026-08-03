@@ -1,5 +1,6 @@
+PLAYERS_NUMBER = 8
 MAX_CREDIT_AMOUNT = 500
-TOTAL_CREDITS_AMOUNT = MAX_CREDIT_AMOUNT * 10
+TOTAL_CREDITS_AMOUNT = MAX_CREDIT_AMOUNT * PLAYERS_NUMBER
 
 NUMBER_OF_PLAYERS_PER_ROLE = {
     "goalkeepers": 3,
@@ -10,9 +11,9 @@ NUMBER_OF_PLAYERS_PER_ROLE = {
 
 MAX_CREDIT_PER_ROLE = {
     "goalkeepers": 50,
-    "defenders": 50,
+    "defenders": 100,
     "midfielders": 100,
-    "attackers": 300,
+    "attackers": 250,
 }
 
 STANDARD_ROLE_MULTIPLIERS = {

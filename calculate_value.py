@@ -69,11 +69,81 @@ def calculate_maximum_price_for_player(name: str, role: str) -> tuple[float, flo
         player_rating[0] * (calculate_mean_for_remaining_players() / 60) * role_multiplier
     )
 
-    my_remaining_credits_for_role = MAX_CREDIT_PER_ROLE[role] - (
-        teams_db.execute(
-            "SELECT SUM(paid_value) FROM team_simo WHERE role = ?", (role,)
-        ).fetchone()[0]
-        or 0
+    if role == "defenders":
+        if (
+            teams_db.execute(
+                "SELECT SUM(name) FROM team_simo WHERE role = 'goalkeepers'"
+            ).fetchone()[0]
+            > NUMBER_OF_PLAYERS_PER_ROLE["goalkeepers"]
+        ):
+            extra_credits = (
+                MAX_CREDIT_PER_ROLE["goalkeepers"]
+                - teams_db.execute(
+                    "SELECT SUM(paid_value) FROM team_simo WHERE role = 'goalkeepers'"
+                ).fetchone()[0]
+            )
+    elif role == "midfielders":
+        if (
+            teams_db.execute("SELECT SUM(name) FROM team_simo WHERE role = 'defenders'").fetchone()[
+                0
+            ]
+            > NUMBER_OF_PLAYERS_PER_ROLE["defenders"]
+            and teams_db.execute(
+                "SELECT SUM(name) FROM team_simo WHERE role = 'goalkeepers'"
+            ).fetchone()[0]
+            > NUMBER_OF_PLAYERS_PER_ROLE["goalkeepers"]
+        ):
+            extra_credits = (
+                MAX_CREDIT_PER_ROLE["defenders"]
+                - teams_db.execute(
+                    "SELECT SUM(paid_value) FROM team_simo WHERE role = 'defenders'"
+                ).fetchone()[0]
+                + MAX_CREDIT_PER_ROLE["goalkeepers"]
+                - teams_db.execute(
+                    "SELECT SUM(paid_value) FROM team_simo WHERE role = 'goalkeepers'"
+                ).fetchone()[0]
+            )
+    elif role == "attackers":
+        if (
+            teams_db.execute(
+                "SELECT SUM(name) FROM team_simo WHERE role = 'midfielders'"
+            ).fetchone()[0]
+            > NUMBER_OF_PLAYERS_PER_ROLE["midfielders"]
+            and teams_db.execute(
+                "SELECT SUM(name) FROM team_simo WHERE role = 'defenders'"
+            ).fetchone()[0]
+            > NUMBER_OF_PLAYERS_PER_ROLE["defenders"]
+            and teams_db.execute(
+                "SELECT SUM(name) FROM team_simo WHERE role = 'goalkeepers'"
+            ).fetchone()[0]
+            > NUMBER_OF_PLAYERS_PER_ROLE["goalkeepers"]
+        ):
+            extra_credits = (
+                MAX_CREDIT_PER_ROLE["midfielders"]
+                - teams_db.execute(
+                    "SELECT SUM(paid_value) FROM team_simo WHERE role = 'midfielders'"
+                ).fetchone()[0]
+                + MAX_CREDIT_PER_ROLE["defenders"]
+                - teams_db.execute(
+                    "SELECT SUM(paid_value) FROM team_simo WHERE role = 'defenders'"
+                ).fetchone()[0]
+                + MAX_CREDIT_PER_ROLE["goalkeepers"]
+                - teams_db.execute(
+                    "SELECT SUM(paid_value) FROM team_simo WHERE role = 'goalkeepers'"
+                ).fetchone()[0]
+            )
+        else:
+            extra_credits = 0
+
+    my_remaining_credits_for_role = (
+        MAX_CREDIT_PER_ROLE[role]
+        + extra_credits
+        - (
+            teams_db.execute(
+                "SELECT SUM(paid_value) FROM team_simo WHERE role = ?", (role,)
+            ).fetchone()[0]
+            or 0
+        )
     )
 
     my_remaining_players_for_role = (
@@ -184,7 +254,10 @@ def get_team_and_price_for_player(name: str, role: str) -> tuple[str, int]:
             ).fetchone()[0]
             > 0
         ):
-            return table, (teams_db.execute(
-                f"SELECT paid_value FROM {table} WHERE name = ? AND role = ?", (name, role)
-            ).fetchone()[0] or 0)
+            return table, (
+                teams_db.execute(
+                    f"SELECT paid_value FROM {table} WHERE name = ? AND role = ?", (name, role)
+                ).fetchone()[0]
+                or 0
+            )
     return "unassigned", 0
