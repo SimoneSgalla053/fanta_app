@@ -352,7 +352,7 @@ def render_role_page(role: str):
         if not assignment_team.value:
             ui.notify("Select a team before assigning the player.", type="warning")
             return
-        if assignment_price.value is None or assignment_price.value < 0:
+        if assignment_price.value is None or assignment_price.value <= 0:
             ui.notify("Enter a valid paid price.", type="warning")
             return
         assignment_dialog.close()
@@ -375,7 +375,7 @@ def render_role_page(role: str):
             "text-sm text-slate-500 mb-3"
         )
         assignment_price = (
-            ui.number("Paid price", value=0, precision=0, min=0)
+            ui.number("Paid price", value=1, precision=0, min=0)
             .props("outlined autofocus")
             .classes("w-full")
         )
