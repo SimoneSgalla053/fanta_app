@@ -1,7 +1,9 @@
+
+list/images/
 .venv
 
 db*
 
 *.pyc
 
-*.csv
+list*

@@ -1,15 +1,7 @@
-from nicegui import ui
+import os
+from pathlib import Path
 
-from populate_players import update_players
-
-try:
-    player_counts = update_players()
-    print(
-        "Player data updated: "
-        + ", ".join(f"{role}={count}" for role, count in player_counts.items())
-    )
-except Exception as error:
-    print(f"Player data update failed; using the existing local database: {error}")
+from nicegui import app, ui
 
 from backend import (
     calculate_maximum_price_for_player,
@@ -27,6 +19,20 @@ from config import (
     MY_TEAM,
     NUMBER_OF_PLAYERS_PER_ROLE,
 )
+from populate_players import update_players
+
+try:
+    player_counts = update_players()
+    print(
+        "Player data updated: "
+        + ", ".join(f"{role}={count}" for role, count in player_counts.items())
+    )
+except Exception as error:
+    print(f"Player data update failed; using the existing local database: {error}")
+
+PLAYER_IMAGES_DIR = Path(__file__).resolve().parent / "list/images"
+PLAYER_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+app.add_static_files("/player-images", PLAYER_IMAGES_DIR)
 
 ROLE_META = {
     "goalkeepers": {
@@ -325,6 +331,7 @@ def render_role_page(role: str):
                     p_name = player.get("name")
                     p_club = player.get("team", "")
                     p_rating = player.get("rating", 0)
+                    p_image = player.get("image_path")
 
                     current_team, current_price = get_team_and_price_for_player(p_name, role)
                     assigned = current_team != "unassigned"
@@ -339,14 +346,26 @@ def render_role_page(role: str):
                         row_classes += " bg-slate-50/50 opacity-70"
 
                     with ui.grid(columns=7).classes(row_classes):
-                        with ui.column().classes("gap-0.5"):
-                            ui.label(p_name).classes("font-semibold text-slate-800")
-                            if assigned:
-                                ui.badge(
-                                    current_team.replace("team_", "").capitalize(),
-                                    color="emerald-100",
-                                    text_color="emerald-700",
-                                ).classes("w-fit font-bold")
+                        with ui.row().classes("items-center gap-3 no-wrap"):
+                            if p_image:
+                                ui.image(f"/player-images/{p_image}").props("fit=cover").classes(
+                                    "w-12 h-12 rounded-full bg-slate-100 shadow-sm shrink-0"
+                                )
+                            else:
+                                ui.avatar(
+                                    (p_name or "?")[0],
+                                    color="slate-200",
+                                    text_color="slate-600",
+                                    size="lg",
+                                ).classes("font-bold shrink-0")
+                            with ui.column().classes("gap-0.5"):
+                                ui.label(p_name).classes("font-semibold text-slate-800")
+                                if assigned:
+                                    ui.badge(
+                                        current_team.replace("team_", "").capitalize(),
+                                        color="emerald-100",
+                                        text_color="emerald-700",
+                                    ).classes("w-fit font-bold")
                         ui.label(p_club).classes("text-slate-500 text-sm")
                         rating_color = (
                             "bg-emerald-100 text-emerald-700"
@@ -577,4 +596,4 @@ def root():
     ).classes("w-full")
 
 
-ui.run(root)
+ui.run(root, port=int(os.getenv("PORT", "8080")), reload=False)

@@ -7,6 +7,7 @@ from config import (
     TOTAL_CREDITS_AMOUNT,
 )
 import sqlite3
+from math import ceil
 
 teams_db = sqlite3.connect("db/teams_dataset/teams.db")
 players_db = sqlite3.connect("db/player_dataset/players.db")
@@ -117,7 +118,7 @@ def calculate_maximum_price_for_player(name: str, role: str) -> tuple[int, int]:
     else:
         my_max_price = 0
 
-    return round(player_value), round(my_max_price)
+    return ceil(player_value), ceil(my_max_price)
 
 
 def insert_player_for_team(team: str, name: str, role: str, paid_value: float) -> None:
@@ -156,9 +157,26 @@ def get_players_for_team(team: str) -> list[dict]:
     if team not in get_all_teams():
         return []
     rows = teams_db.execute(f"SELECT name, role, paid_value FROM {team}").fetchall()
-    return [
-        {"name": name, "role": role, "paid_value": paid_value} for name, role, paid_value in rows
-    ]
+    players = []
+    for name, role, paid_value in rows:
+        image_path = None
+        if role in NUMBER_OF_PLAYERS_PER_ROLE:
+            try:
+                image_row = players_db.execute(
+                    f"SELECT image_path FROM {role} WHERE name = ?", (name,)
+                ).fetchone()
+                image_path = image_row[0] if image_row else None
+            except sqlite3.OperationalError:
+                pass
+        players.append(
+            {
+                "name": name,
+                "role": role,
+                "paid_value": paid_value,
+                "image_path": image_path,
+            }
+        )
+    return players
 
 
 def get_all_players_for_role(role: str) -> list[dict]:
@@ -171,11 +189,19 @@ def get_all_players_for_role(role: str) -> list[dict]:
         list[dict[str, str, int]]: A list of players for the specified role.
     """
     _validate_role(role)
-    players = players_db.execute(f"SELECT name, team, rating FROM {role}").fetchall()
-    players_dict = [
-        {"name": name, "team": team, "rating": rating} for name, team, rating in players
+    try:
+        players = players_db.execute(
+            f"SELECT name, team, rating, image_path FROM {role}"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        players = [
+            (*row, None)
+            for row in players_db.execute(f"SELECT name, team, rating FROM {role}").fetchall()
+        ]
+    return [
+        {"name": name, "team": team, "rating": rating, "image_path": image_path}
+        for name, team, rating, image_path in players
     ]
-    return players_dict
 
 
 def get_all_teams() -> list[str]:

@@ -4,6 +4,7 @@ import os
 import re
 import sqlite3
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -14,6 +15,7 @@ MAX_QT = 35.0  # Top Fantacalcio Qt.A ceiling
 K_EXP = 0.72  # Curve shape factor
 
 QUOTATIONS_URL = "https://www.fantacalcio.it/quotazioni-fantacalcio"
+PLAYER_IMAGE_URL = "https://content.fantacalcio.it/web/campioncini/{season}/card/{player_id}.png"
 CSV_HEADER = [
     "Id",
     "R",
@@ -113,13 +115,18 @@ class QuotationsParser(HTMLParser):
             self._player = None
 
 
-def download_latest_players(timeout: float = 20.0) -> dict[str, list[list[str]]]:
+def download_latest_players(timeout: float = 20.0) -> tuple[dict[str, list[list[str]]], str]:
     request = Request(
         QUOTATIONS_URL,
         headers={"User-Agent": "Mozilla/5.0 (compatible; FantaApp/1.0)"},
     )
     with urlopen(request, timeout=timeout) as response:
         html = response.read().decode("utf-8")
+
+    season_match = re.search(r"/api/v1/Excel/prices/(\d+)/1", html)
+    if not season_match:
+        raise ValueError("Could not determine the current Fantacalcio season")
+    season_id = season_match.group(1)
 
     parser = QuotationsParser()
     parser.feed(html)
@@ -160,7 +167,48 @@ def download_latest_players(timeout: float = 20.0) -> dict[str, list[list[str]]]
                 f"Downloaded data failed validation for role {role}: "
                 f"found {len(rows_by_role[role])}, expected at least {minimum}"
             )
-    return rows_by_role
+    return rows_by_role, season_id
+
+
+def _download_player_images(
+    rows_by_role: dict[str, list[list[str]]], image_dir: Path, season_id: str
+) -> int:
+    season_dir = image_dir / season_id
+    season_dir.mkdir(parents=True, exist_ok=True)
+    player_ids = [row[0] for rows in rows_by_role.values() for row in rows]
+
+    def download_image(player_id: str) -> bool:
+        destination = season_dir / f"{player_id}.png"
+        if destination.exists() and destination.stat().st_size > 0:
+            return True
+
+        request = Request(
+            PLAYER_IMAGE_URL.format(season=season_id, player_id=player_id),
+            headers={"User-Agent": "Mozilla/5.0 (compatible; FantaApp/1.0)"},
+        )
+        temporary: Path | None = None
+        try:
+            with urlopen(request, timeout=15.0) as response:
+                if response.headers.get_content_type() != "image/png":
+                    return False
+                image = response.read()
+            if not image.startswith(b"\x89PNG\r\n\x1a\n"):
+                return False
+            with tempfile.NamedTemporaryFile(
+                mode="wb", dir=season_dir, prefix=f".{player_id}.", delete=False
+            ) as file:
+                file.write(image)
+                temporary = Path(file.name)
+            os.replace(temporary, destination)
+            return True
+        except (OSError, ValueError):
+            return False
+        finally:
+            if temporary:
+                temporary.unlink(missing_ok=True)
+
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        return sum(executor.map(download_image, player_ids))
 
 
 def _write_csv_files(rows_by_role: dict[str, list[list[str]]], list_dir: Path) -> None:
@@ -190,7 +238,9 @@ def _write_csv_files(rows_by_role: dict[str, list[list[str]]], list_dir: Path) -
             temporary.unlink(missing_ok=True)
 
 
-def _rebuild_database(rows_by_role: dict[str, list[list[str]]], db_path: Path) -> None:
+def _rebuild_database(
+    rows_by_role: dict[str, list[list[str]]], db_path: Path, image_dir: Path, season_id: str
+) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as connection:
         for role, (table_name, _) in ROLE_FILES.items():
@@ -199,24 +249,46 @@ def _rebuild_database(rows_by_role: dict[str, list[list[str]]], db_path: Path) -
                 CREATE TABLE {table_name} (
                     name TEXT PRIMARY KEY NOT NULL,
                     team TEXT NOT NULL,
-                    rating INTEGER NOT NULL
+                    rating INTEGER NOT NULL,
+                    player_id TEXT NOT NULL,
+                    image_path TEXT
                 )
                 """)
             players = [
-                (row[3], row[4], normalize_rating(int(row[5]))) for row in rows_by_role[role]
+                (
+                    row[3],
+                    row[4],
+                    normalize_rating(int(row[5])),
+                    row[0],
+                    (
+                        f"{season_id}/{row[0]}.png"
+                        if (image_dir / season_id / f"{row[0]}.png").exists()
+                        else None
+                    ),
+                )
+                for row in rows_by_role[role]
             ]
             connection.executemany(
-                f"INSERT OR IGNORE INTO {table_name} (name, team, rating) VALUES (?, ?, ?)",
+                f"""INSERT OR IGNORE INTO {table_name}
+                    (name, team, rating, player_id, image_path) VALUES (?, ?, ?, ?, ?)""",
                 players,
             )
 
 
 def update_players(base_dir: str | Path | None = None) -> dict[str, int]:
-    """Download current quotations, save role CSVs, and rebuild the player database."""
+    """Download current players and portraits, then rebuild local data."""
     project_dir = Path(base_dir) if base_dir else Path(__file__).resolve().parent
-    rows_by_role = download_latest_players()
+    rows_by_role, season_id = download_latest_players()
+    image_dir = project_dir / "list/images"
     _write_csv_files(rows_by_role, project_dir / "list")
-    _rebuild_database(rows_by_role, project_dir / "db/player_dataset/players.db")
+    image_count = _download_player_images(rows_by_role, image_dir, season_id)
+    _rebuild_database(
+        rows_by_role,
+        project_dir / "db/player_dataset/players.db",
+        image_dir,
+        season_id,
+    )
+    print(f"Player portraits available: {image_count}")
     return {ROLE_FILES[role][0]: len(rows) for role, rows in rows_by_role.items()}
 
 
