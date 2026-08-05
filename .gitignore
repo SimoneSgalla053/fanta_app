@@ -4,4 +4,4 @@ db*
 
 *.pyc
 
-list*
+*.csv
