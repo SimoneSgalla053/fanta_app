@@ -1,3 +1,6 @@
+from datetime import datetime
+from pathlib import Path
+
 from config import (
     MAX_CREDIT_AMOUNT,
     MAX_CREDIT_PER_ROLE,
@@ -142,6 +145,31 @@ def insert_player_for_team(team: str, name: str, role: str, paid_value: float) -
             (name, role, paid_value),
         )
     teams_db.commit()
+
+
+def reset_all_teams() -> int:
+    """Remove every player assignment from every team."""
+    teams = get_all_teams()
+    removed = sum(
+        teams_db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in teams
+    )
+    if removed == 0:
+        return 0
+
+    backup_dir = Path("db/teams_dataset/backups")
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / f"teams_{datetime.now():%Y%m%d_%H%M%S}.db"
+    with sqlite3.connect(backup_path) as backup_db:
+        teams_db.backup(backup_db)
+
+    try:
+        for table in teams:
+            teams_db.execute(f"DELETE FROM {table}")
+        teams_db.commit()
+    except sqlite3.Error:
+        teams_db.rollback()
+        raise
+    return removed
 
 
 def get_players_for_team(team: str) -> list[dict]:

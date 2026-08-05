@@ -12,6 +12,7 @@ from backend import (
     get_players_for_team,
     get_team_and_price_for_player,
     insert_player_for_team,
+    reset_all_teams,
 )
 from config import (
     MAX_CREDIT_AMOUNT,
@@ -211,43 +212,88 @@ def index_page():
 
 
 def select_team_page():
-    ui.label("Teams Directory").classes("text-3xl font-extrabold text-slate-900 mb-2")
-    ui.label("Select a team to inspect roster allocations and total spend.").classes(
-        "text-slate-500 mb-6"
-    )
+    def confirm_reset():
+        if reset_confirmation.value != "RESET":
+            return
+        removed = reset_all_teams()
+        reset_dialog.close()
+        ui.notify(
+            f"All teams reset. {removed} player assignments removed.",
+            type="positive",
+            position="top-right",
+        )
+        team_directory.refresh()
 
-    total_slots = sum(NUMBER_OF_PLAYERS_PER_ROLE.values())
+    def open_reset_dialog():
+        reset_confirmation.value = ""
+        reset_dialog.open()
 
-    with ui.grid(columns="1 sm:2 md:3 lg:4").classes("w-full gap-4"):
-        for team in get_all_teams():
-            t_name = team.replace("team_", "").capitalize()
-            roster = get_players_for_team(team)
-            spent_total = sum(p.get("paid_value", 0) for p in roster)
-            with (
-                ui.card()
-                .classes(
-                    "p-5 cursor-pointer rounded-2xl hover:border-emerald-500 hover:shadow-lg "
-                    "border border-slate-200 transition-all shadow-sm"
-                )
-                .on("click", lambda t=team: ui.navigate.to(f"/team/{t}"))
-            ):
-                with ui.row().classes("items-center justify-between w-full mb-3 no-wrap"):
-                    with ui.row().classes("items-center gap-3 no-wrap"):
-                        ui.avatar(t_name[0], color="slate-800", text_color="white").classes(
-                            "font-bold"
-                        )
-                        ui.label(t_name).classes("font-bold text-slate-800 text-lg")
-                    ui.icon("chevron_right", color="gray-400")
-                with ui.row().classes(
-                    "w-full justify-between text-xs text-slate-500 font-medium mb-1 no-wrap"
+    with ui.dialog() as reset_dialog, ui.card().classes("w-full max-w-md p-6 rounded-2xl").props(
+        "persistent"
+    ):
+        with ui.row().classes("items-center gap-3 no-wrap"):
+            ui.icon("warning", size="md").classes("text-red-500")
+            ui.label("Reset all teams?").classes("text-xl font-bold text-slate-900")
+        ui.label(
+            "Every player assignment and paid price will be permanently removed from all teams."
+        ).classes("text-slate-600")
+        reset_confirmation = (
+            ui.input("Type RESET to confirm")
+            .props("outlined autofocus autocomplete=off")
+            .classes("w-full mt-2")
+        )
+        with ui.row().classes("w-full justify-end gap-2 mt-4"):
+            ui.button("Cancel", on_click=reset_dialog.close).props("flat no-caps color=slate")
+            ui.button("Erase all rosters", icon="delete_forever", on_click=confirm_reset).props(
+                "unelevated no-caps color=negative"
+            ).bind_enabled_from(reset_confirmation, "value", lambda value: value == "RESET")
+
+    with ui.row().classes("w-full items-center justify-between mb-6"):
+        with ui.column().classes("gap-1"):
+            ui.label("Teams Directory").classes("text-3xl font-extrabold text-slate-900")
+            ui.label("Select a team to inspect roster allocations and total spend.").classes(
+                "text-slate-500"
+            )
+        ui.button("Reset all teams", icon="delete_sweep", on_click=open_reset_dialog).props(
+            "outline no-caps color=negative"
+        ).classes("rounded-lg")
+
+    @ui.refreshable
+    def team_directory():
+        total_slots = sum(NUMBER_OF_PLAYERS_PER_ROLE.values())
+
+        with ui.grid(columns="1 sm:2 md:3 lg:4").classes("w-full gap-4"):
+            for team in get_all_teams():
+                t_name = team.replace("team_", "").capitalize()
+                roster = get_players_for_team(team)
+                spent_total = sum(p.get("paid_value", 0) for p in roster)
+                with (
+                    ui.card()
+                    .classes(
+                        "p-5 cursor-pointer rounded-2xl hover:border-emerald-500 hover:shadow-lg "
+                        "border border-slate-200 transition-all shadow-sm"
+                    )
+                    .on("click", lambda t=team: ui.navigate.to(f"/team/{t}"))
                 ):
-                    ui.label(f"{len(roster)}/{total_slots} players")
-                    ui.label(f"{spent_total}/{MAX_CREDIT_AMOUNT} cr")
-                ui.linear_progress(
-                    value=min(spent_total / MAX_CREDIT_AMOUNT, 1.0),
-                    show_value=False,
-                    color="teal",
-                ).props("rounded size=6px")
+                    with ui.row().classes("items-center justify-between w-full mb-3 no-wrap"):
+                        with ui.row().classes("items-center gap-3 no-wrap"):
+                            ui.avatar(t_name[0], color="slate-800", text_color="white").classes(
+                                "font-bold"
+                            )
+                            ui.label(t_name).classes("font-bold text-slate-800 text-lg")
+                        ui.icon("chevron_right", color="gray-400")
+                    with ui.row().classes(
+                        "w-full justify-between text-xs text-slate-500 font-medium mb-1 no-wrap"
+                    ):
+                        ui.label(f"{len(roster)}/{total_slots} players")
+                        ui.label(f"{spent_total}/{MAX_CREDIT_AMOUNT} cr")
+                    ui.linear_progress(
+                        value=min(spent_total / MAX_CREDIT_AMOUNT, 1.0),
+                        show_value=False,
+                        color="teal",
+                    ).props("rounded size=6px")
+
+    team_directory()
 
 
 def render_role_page(role: str):
@@ -265,8 +311,10 @@ def render_role_page(role: str):
     )
 
     players = get_all_players_for_role(role)
-    team_options = ["unassigned"] + get_all_teams()
+    teams = get_all_teams()
+    team_options = {team: team.replace("team_", "").capitalize() for team in teams}
     state = {"search": "", "hide_assigned": False}
+    assignment_state = {"player_name": ""}
 
     @ui.refreshable
     def budget_bar():
@@ -299,6 +347,64 @@ def render_role_page(role: str):
         budget_bar.refresh()
         market.refresh()
 
+    def save_assignment():
+        player_name = assignment_state["player_name"]
+        if not assignment_team.value:
+            ui.notify("Select a team before assigning the player.", type="warning")
+            return
+        if assignment_price.value is None or assignment_price.value < 0:
+            ui.notify("Enter a valid paid price.", type="warning")
+            return
+        assignment_dialog.close()
+        handle_assignment(
+            assignment_team.value,
+            player_name,
+            int(assignment_price.value),
+        )
+
+    def release_player():
+        player_name = assignment_state["player_name"]
+        assignment_dialog.close()
+        handle_assignment("unassigned", player_name, 0)
+
+    with ui.dialog() as assignment_dialog, ui.card().classes("w-full max-w-md p-6 rounded-2xl"):
+        with ui.row().classes("items-center gap-3 mb-2 no-wrap"):
+            ui.icon("person_add", size="sm").classes("text-emerald-600")
+            assignment_title = ui.label("Assign player").classes("text-xl font-bold text-slate-900")
+        ui.label("Enter the paid price, then select the destination team.").classes(
+            "text-sm text-slate-500 mb-3"
+        )
+        assignment_price = (
+            ui.number("Paid price", value=0, precision=0, min=0)
+            .props("outlined autofocus")
+            .classes("w-full")
+        )
+        assignment_team = (
+            ui.select(options=team_options, label="Team").props("outlined").classes("w-full")
+        )
+        with ui.row().classes("w-full justify-between items-center mt-3"):
+            release_button = ui.button(
+                "Release player", icon="person_remove", on_click=release_player
+            ).props("flat no-caps color=negative")
+            with ui.row().classes("gap-2"):
+                ui.button("Cancel", on_click=assignment_dialog.close).props(
+                    "flat no-caps color=slate"
+                )
+                ui.button("Save assignment", icon="check", on_click=save_assignment).props(
+                    "unelevated no-caps color=positive"
+                )
+
+    def open_assignment_dialog(player_name: str, current_team: str, current_price: int):
+        assignment_state["player_name"] = player_name
+        assigned = current_team != "unassigned"
+        assignment_title.set_text(
+            f"{'Edit assignment for' if assigned else 'Assign'} {player_name}"
+        )
+        assignment_price.value = current_price if assigned else 0
+        assignment_team.value = current_team if assigned else None
+        release_button.set_visibility(assigned)
+        assignment_dialog.open()
+
     @ui.refreshable
     def market():
         term = state["search"].strip().lower()
@@ -313,7 +419,7 @@ def render_role_page(role: str):
         with ui.card().classes(
             "w-full p-0 overflow-hidden border border-slate-200 shadow-sm rounded-2xl"
         ):
-            with ui.grid(columns=7).classes(
+            with ui.grid(columns=6).classes(
                 "w-full bg-slate-100 p-4 gap-2 font-bold text-slate-600 text-xs uppercase "
                 "tracking-wider border-b border-slate-200"
             ):
@@ -322,8 +428,7 @@ def render_role_page(role: str):
                 ui.label("Rating")
                 ui.label("Valuation")
                 ui.label("My Max Price")
-                ui.label("Paid Price")
-                ui.label("Assign Team")
+                ui.label("Action")
 
             shown = 0
             with ui.column().classes("w-full divide-y divide-slate-100 gap-0"):
@@ -345,7 +450,7 @@ def render_role_page(role: str):
                     if assigned:
                         row_classes += " bg-slate-50/50 opacity-70"
 
-                    with ui.grid(columns=7).classes(row_classes):
+                    with ui.grid(columns=6).classes(row_classes):
                         with ui.row().classes("items-center gap-3 no-wrap"):
                             if p_image:
                                 ui.image(f"/player-images/{p_image}").props("fit=cover").classes(
@@ -381,26 +486,17 @@ def render_role_page(role: str):
                         )
                         ui.label(f"{player_value} cr").classes("text-slate-500")
                         ui.label(f"{my_max_price} cr").classes("font-extrabold text-emerald-600")
-
-                        paid_input = (
-                            ui.number(value=current_price or 0, precision=0, min=0)
-                            .props("dense outlined debounce=500")
-                            .classes("w-24 bg-white")
-                        )
-                        select = (
-                            ui.select(options=team_options, value=current_team)
-                            .props("dense outlined")
-                            .classes("w-40 bg-white")
-                        )
-                        select.on_value_change(
-                            lambda e, p=p_name, inp=paid_input: handle_assignment(
-                                e.value, p, int(inp.value or 0)
-                            )
-                        )
-                        paid_input.on_value_change(
-                            lambda e, p=p_name, sel=select: handle_assignment(
-                                sel.value, p, int(e.value or 0)
-                            )
+                        ui.button(
+                            "Edit" if assigned else "Assign",
+                            icon="edit" if assigned else "person_add",
+                            on_click=lambda p=p_name, t=current_team, price=current_price: (
+                                open_assignment_dialog(p, t, price)
+                            ),
+                        ).props(
+                            f"{'flat' if assigned else 'unelevated'} dense no-caps "
+                            f"color={'slate' if assigned else 'positive'}"
+                        ).classes(
+                            "rounded-lg"
                         )
 
                 if shown == 0:
