@@ -73,65 +73,93 @@ def calculate_maximum_price_for_player(name: str, role: str) -> tuple[float, flo
 
     if role == "defenders":
         if (
-            (teams_db.execute(
+            teams_db.execute(
                 "SELECT COUNT(*) FROM team_simo WHERE role = 'goalkeepers'"
-            ).fetchone()[0] or 0) > NUMBER_OF_PLAYERS_PER_ROLE["goalkeepers"]
-        ):
-            extra_credits = (
-                MAX_CREDIT_PER_ROLE["goalkeepers"]
-                - (teams_db.execute(
+            ).fetchone()[0]
+            or 0
+        ) > NUMBER_OF_PLAYERS_PER_ROLE["goalkeepers"]:
+            extra_credits = MAX_CREDIT_PER_ROLE["goalkeepers"] - (
+                teams_db.execute(
                     "SELECT SUM(paid_value) FROM team_simo WHERE role = 'goalkeepers'"
-                ).fetchone()[0] or 0)
+                ).fetchone()[0]
+                or 0
             )
     elif role == "midfielders":
         if (
-            (teams_db.execute("SELECT COUNT(*) FROM team_simo WHERE role = 'defenders'").fetchone()[
+            teams_db.execute("SELECT COUNT(*) FROM team_simo WHERE role = 'defenders'").fetchone()[
                 0
-            ] or 0)
-            > NUMBER_OF_PLAYERS_PER_ROLE["defenders"]
-            and (teams_db.execute(
+            ]
+            or 0
+        ) > NUMBER_OF_PLAYERS_PER_ROLE["defenders"] and (
+            teams_db.execute(
                 "SELECT COUNT(*) FROM team_simo WHERE role = 'goalkeepers'"
-            ).fetchone()[0] or 0)
-            > NUMBER_OF_PLAYERS_PER_ROLE["goalkeepers"]
-        ):
+            ).fetchone()[0]
+            or 0
+        ) > NUMBER_OF_PLAYERS_PER_ROLE[
+            "goalkeepers"
+        ]:
             extra_credits = (
                 MAX_CREDIT_PER_ROLE["defenders"]
-                - (teams_db.execute(
-                    "SELECT SUM(paid_value) FROM team_simo WHERE role = 'defenders'"
-                ).fetchone()[0] or 0)
+                - (
+                    teams_db.execute(
+                        "SELECT SUM(paid_value) FROM team_simo WHERE role = 'defenders'"
+                    ).fetchone()[0]
+                    or 0
+                )
                 + MAX_CREDIT_PER_ROLE["goalkeepers"]
-                - (teams_db.execute(
-                    "SELECT SUM(paid_value) FROM team_simo WHERE role = 'goalkeepers'"
-                ).fetchone()[0] or 0)
+                - (
+                    teams_db.execute(
+                        "SELECT SUM(paid_value) FROM team_simo WHERE role = 'goalkeepers'"
+                    ).fetchone()[0]
+                    or 0
+                )
             )
     elif role == "attackers":
         if (
-            (teams_db.execute(
-                "SELECT COUNT(*) FROM team_simo WHERE role = 'midfielders'"
-            ).fetchone()[0] or 0)
+            (
+                teams_db.execute(
+                    "SELECT COUNT(*) FROM team_simo WHERE role = 'midfielders'"
+                ).fetchone()[0]
+                or 0
+            )
             > NUMBER_OF_PLAYERS_PER_ROLE["midfielders"]
-            and (teams_db.execute(
-            "SELECT COUNT(*) FROM team_simo WHERE role = 'defenders'"
-            ).fetchone()[0] or 0)
+            and (
+                teams_db.execute(
+                    "SELECT COUNT(*) FROM team_simo WHERE role = 'defenders'"
+                ).fetchone()[0]
+                or 0
+            )
             > NUMBER_OF_PLAYERS_PER_ROLE["defenders"]
-            and (teams_db.execute(
-                "SELECT COUNT(*) FROM team_simo WHERE role = 'goalkeepers'"
-            ).fetchone()[0] or 0)
+            and (
+                teams_db.execute(
+                    "SELECT COUNT(*) FROM team_simo WHERE role = 'goalkeepers'"
+                ).fetchone()[0]
+                or 0
+            )
             > NUMBER_OF_PLAYERS_PER_ROLE["goalkeepers"]
         ):
             extra_credits = (
                 MAX_CREDIT_PER_ROLE["midfielders"]
-                - (teams_db.execute(
-                    "SELECT SUM(paid_value) FROM team_simo WHERE role = 'midfielders'"
-                ).fetchone()[0] or 0)
+                - (
+                    teams_db.execute(
+                        "SELECT SUM(paid_value) FROM team_simo WHERE role = 'midfielders'"
+                    ).fetchone()[0]
+                    or 0
+                )
                 + MAX_CREDIT_PER_ROLE["defenders"]
-                - (teams_db.execute(
-                    "SELECT SUM(paid_value) FROM team_simo WHERE role = 'defenders'"
-                ).fetchone()[0] or 0)
+                - (
+                    teams_db.execute(
+                        "SELECT SUM(paid_value) FROM team_simo WHERE role = 'defenders'"
+                    ).fetchone()[0]
+                    or 0
+                )
                 + MAX_CREDIT_PER_ROLE["goalkeepers"]
-                - (teams_db.execute(
-                    "SELECT SUM(paid_value) FROM team_simo WHERE role = 'goalkeepers'"
-                ).fetchone()[0] or 0)
+                - (
+                    teams_db.execute(
+                        "SELECT SUM(paid_value) FROM team_simo WHERE role = 'goalkeepers'"
+                    ).fetchone()[0]
+                    or 0
+                )
             )
 
     my_remaining_credits_for_role = (
@@ -177,7 +205,16 @@ def insert_player_for_team(team: str, name: str, role: str, paid_value: float) -
     """
 
     if team == "unassigned":
-        return
+        for table in teams_db.execute("SELECT name FROM sqlite_master WHERE type='table';"):
+            if (
+                teams_db.execute(
+                    f"SELECT COUNT(*) FROM {table[0]} WHERE name = ?", (name,)
+                ).fetchone()[0]
+                > 0
+            ):
+                teams_db.execute(f"DELETE FROM {table[0]} WHERE name = ?", (name,))
+                teams_db.commit()
+                return
 
     for table in teams_db.execute("SELECT name FROM sqlite_master WHERE type='table';"):
         if (
