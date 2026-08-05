@@ -275,6 +275,38 @@ def _rebuild_database(
             )
 
 
+def _remove_stale_team_players(
+    rows_by_role: dict[str, list[list[str]]], teams_db_path: Path
+) -> int:
+    if not teams_db_path.exists():
+        return 0
+
+    valid_players = {
+        (row[3], role_name)
+        for role, (role_name, _) in ROLE_FILES.items()
+        for row in rows_by_role[role]
+    }
+    removed = 0
+    with sqlite3.connect(teams_db_path) as connection:
+        team_tables = [
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'team_%'"
+            ).fetchall()
+        ]
+        for table_name in team_tables:
+            stale_players = [
+                (name,)
+                for name, role in connection.execute(
+                    f"SELECT name, role FROM {table_name}"
+                ).fetchall()
+                if (name, role) not in valid_players
+            ]
+            connection.executemany(f"DELETE FROM {table_name} WHERE name = ?", stale_players)
+            removed += len(stale_players)
+    return removed
+
+
 def update_players(base_dir: str | Path | None = None) -> dict[str, int]:
     """Download current players and portraits, then rebuild local data."""
     project_dir = Path(base_dir) if base_dir else Path(__file__).resolve().parent
@@ -288,7 +320,11 @@ def update_players(base_dir: str | Path | None = None) -> dict[str, int]:
         image_dir,
         season_id,
     )
+    removed_count = _remove_stale_team_players(
+        rows_by_role, project_dir / "db/teams_dataset/teams.db"
+    )
     print(f"Player portraits available: {image_count}")
+    print(f"Stale team assignments removed: {removed_count}")
     return {ROLE_FILES[role][0]: len(rows) for role, rows in rows_by_role.items()}
 
 
