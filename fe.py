@@ -1,10 +1,10 @@
 from nicegui import ui
 
-from calculate_value import (
+from backend import (
     calculate_maximum_price_for_player,
+    get_all_players_for_role,
     get_all_teams,
     get_players_for_team,
-    get_remaining_players_for_role,
     get_team_and_price_for_player,
     insert_player_for_team,
 )
@@ -25,24 +25,12 @@ def layout_wrapper(content_fn, *args, **kwargs):
                 ui.label("FantaApp Pro").classes("text-xl font-bold tracking-wide")
 
             with ui.row().classes("gap-6 font-medium text-slate-300"):
-                ui.link("Dashboard", "/").classes(
-                    "hover:text-emerald-400 transition"
-                )
-                ui.link("Teams", "/teams").classes(
-                    "hover:text-emerald-400 transition"
-                )
-                ui.link("Goalkeepers", "/goalkeepers").classes(
-                    "hover:text-emerald-400 transition"
-                )
-                ui.link("Defenders", "/defenders").classes(
-                    "hover:text-emerald-400 transition"
-                )
-                ui.link("Midfielders", "/midfielders").classes(
-                    "hover:text-emerald-400 transition"
-                )
-                ui.link("Attackers", "/attackers").classes(
-                    "hover:text-emerald-400 transition"
-                )
+                ui.link("Dashboard", "/").classes("hover:text-emerald-400 transition")
+                ui.link("Teams", "/teams").classes("hover:text-emerald-400 transition")
+                ui.link("Goalkeepers", "/goalkeepers").classes("hover:text-emerald-400 transition")
+                ui.link("Defenders", "/defenders").classes("hover:text-emerald-400 transition")
+                ui.link("Midfielders", "/midfielders").classes("hover:text-emerald-400 transition")
+                ui.link("Attackers", "/attackers").classes("hover:text-emerald-400 transition")
 
         # Main Page Container
         with ui.column().classes("w-full max-w-7xl mx-auto p-6 md:p-8 flex-1"):
@@ -50,12 +38,10 @@ def layout_wrapper(content_fn, *args, **kwargs):
 
 
 def index_page():
-    ui.label("Fantacalcio Auction Hub").classes(
-        "text-3xl font-extrabold text-slate-900 mb-2"
+    ui.label("Fantacalcio Auction Hub").classes("text-3xl font-extrabold text-slate-900 mb-2")
+    ui.label("Manage player budgets, max prices, and team assignments in real time.").classes(
+        "text-slate-500 mb-8"
     )
-    ui.label(
-        "Manage player budgets, max prices, and team assignments in real time."
-    ).classes("text-slate-500 mb-8")
 
     with ui.grid(columns="1 sm:2 md:3 lg:5").classes("w-full gap-4"):
         roles = [
@@ -75,20 +61,16 @@ def index_page():
                 )
                 .on("click", lambda r=route: ui.navigate.to(r))
             ):
-                with ui.avatar(color=None).classes(
-                    f"{color_cls} text-white mb-3 shadow-md"
-                ):
+                with ui.avatar(color=None).classes(f"{color_cls} text-white mb-3 shadow-md"):
                     ui.icon(icon)
                 ui.label(name).classes("font-bold text-slate-800 text-lg")
 
 
 def select_team_page():
-    ui.label("Teams Directory").classes(
-        "text-3xl font-extrabold text-slate-900 mb-2"
+    ui.label("Teams Directory").classes("text-3xl font-extrabold text-slate-900 mb-2")
+    ui.label("Select a team to inspect roster allocations and total spend.").classes(
+        "text-slate-500 mb-6"
     )
-    ui.label(
-        "Select a team to inspect roster allocations and total spend."
-    ).classes("text-slate-500 mb-6")
 
     teams = get_all_teams()
 
@@ -104,41 +86,31 @@ def select_team_page():
                 .on("click", lambda t=team: ui.navigate.to(f"/team/{t}"))
             ):
                 with ui.row().classes("items-center gap-3"):
-                    ui.avatar(
-                        t_name[0], color="slate-800", text_color="white"
-                    ).classes("font-bold")
+                    ui.avatar(t_name[0], color="slate-800", text_color="white").classes("font-bold")
                     ui.label(t_name).classes("font-bold text-slate-800 text-lg")
                 ui.icon("chevron_right", color="gray-400")
 
 
 def render_role_page(role: str):
-    ui.label(f"{role.capitalize()} Market").classes(
-        "text-3xl font-extrabold text-slate-900 mb-2"
+    ui.label(f"{role.capitalize()} Market").classes("text-3xl font-extrabold text-slate-900 mb-2")
+    ui.label("Review calculated max values and assign won players to target teams.").classes(
+        "text-slate-500 mb-6"
     )
-    ui.label(
-        "Review calculated max values and assign won players to target teams."
-    ).classes("text-slate-500 mb-6")
 
-    players = get_remaining_players_for_role(role)
+    players = get_all_players_for_role(role)
     team_options = ["unassigned"] + get_all_teams()
     max_price_labels = {}
 
     def refresh_all_max_prices():
         for player_name, label in max_price_labels.items():
-            _, new_max_price = calculate_maximum_price_for_player(
-                player_name, role
-            )
-            label.set_text(str(new_max_price))
+            _, new_max_price = calculate_maximum_price_for_player(player_name, role)
+            label.set_text(f"{new_max_price} cr")
 
-    def handle_assignment(
-        team_val: str, player_name: str, player_role: str, paid_val: int
-    ):
+    def handle_assignment(team_val: str, player_name: str, player_role: str, paid_val: int):
         insert_player_for_team(team_val, player_name, player_role, paid_val)
         refresh_all_max_prices()
 
-    with ui.card().classes(
-        "w-full p-0 overflow-hidden border border-slate-200 shadow-sm"
-    ):
+    with ui.card().classes("w-full p-0 overflow-hidden border border-slate-200 shadow-sm"):
         with ui.grid(columns=7).classes(
             "w-full bg-slate-100 p-4 gap-2 font-bold text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200"
         ):
@@ -156,12 +128,8 @@ def render_role_page(role: str):
                 p_role = player.get("role", role)
                 p_rating = str(player.get("rating", 0))
 
-                player_value, my_max_price = (
-                    calculate_maximum_price_for_player(p_name, role)
-                )
-                current_team, current_price = get_team_and_price_for_player(
-                    p_name, role
-                )
+                player_value, my_max_price = calculate_maximum_price_for_player(p_name, role)
+                current_team, current_price = get_team_and_price_for_player(p_name, role)
 
                 with ui.grid(columns=7).classes(
                     "w-full p-4 gap-2 items-center hover:bg-slate-50 transition"
@@ -181,10 +149,8 @@ def render_role_page(role: str):
                     max_price_labels[p_name] = max_price_label
 
                     paid_input = (
-                        ui.number(
-                            value=current_price or 0, precision=0, min=0
-                        )
-                        .props("dense outlined")
+                        ui.number(value=current_price or 0, precision=0, min=0)
+                        .props("dense outlined debounce=500")
                         .classes("w-24 bg-white")
                     )
 
@@ -214,16 +180,12 @@ def teams_page(team_name: str):
 
     with ui.row().classes("items-center justify-between w-full mb-6"):
         with ui.row().classes("items-center gap-4"):
-            ui.avatar(
-                clean_name[0], color="slate-900", text_color="white", size="lg"
-            ).classes("font-bold")
+            ui.avatar(clean_name[0], color="slate-900", text_color="white", size="lg").classes(
+                "font-bold"
+            )
             with ui.column().classes("gap-0"):
-                ui.label(f"Team {clean_name}").classes(
-                    "text-3xl font-extrabold text-slate-900"
-                )
-                ui.label("Roster breakdown and expenditure").classes(
-                    "text-slate-500 text-sm"
-                )
+                ui.label(f"Team {clean_name}").classes("text-3xl font-extrabold text-slate-900")
+                ui.label("Roster breakdown and expenditure").classes("text-slate-500 text-sm")
 
     players = get_players_for_team(team_name)
 
@@ -232,9 +194,7 @@ def teams_page(team_name: str):
             "w-full p-12 text-center border border-dashed border-slate-300 shadow-none"
         ):
             ui.icon("group_off", size="xl").classes("text-slate-300 mb-2")
-            ui.label("No players assigned to this team yet.").classes(
-                "text-slate-500 text-base"
-            )
+            ui.label("No players assigned to this team yet.").classes("text-slate-500 text-base")
             ui.button(
                 "Browse Market",
                 on_click=lambda: ui.navigate.to("/goalkeepers"),
@@ -253,24 +213,12 @@ def teams_page(team_name: str):
         total_spent = sum(p.get("paid_value", 0) for p in players)
 
         with ui.row().classes("w-full gap-4 mb-6"):
-            with ui.card().classes(
-                "p-4 flex-1 border border-slate-200 shadow-sm"
-            ):
-                ui.label("Total Squad Size").classes(
-                    "text-xs text-slate-500 font-bold uppercase"
-                )
-                ui.label(f"{len(players)} Players").classes(
-                    "text-2xl font-black text-slate-800"
-                )
-            with ui.card().classes(
-                "p-4 flex-1 border border-slate-200 shadow-sm"
-            ):
-                ui.label("Total Budget Spent").classes(
-                    "text-xs text-slate-500 font-bold uppercase"
-                )
-                ui.label(f"{total_spent} Credits").classes(
-                    "text-2xl font-black text-emerald-600"
-                )
+            with ui.card().classes("p-4 flex-1 border border-slate-200 shadow-sm"):
+                ui.label("Total Squad Size").classes("text-xs text-slate-500 font-bold uppercase")
+                ui.label(f"{len(players)} Players").classes("text-2xl font-black text-slate-800")
+            with ui.card().classes("p-4 flex-1 border border-slate-200 shadow-sm"):
+                ui.label("Total Budget Spent").classes("text-xs text-slate-500 font-bold uppercase")
+                ui.label(f"{total_spent} Credits").classes("text-2xl font-black text-emerald-600")
 
         columns = [
             {
@@ -295,23 +243,19 @@ def teams_page(team_name: str):
             if role_players:
                 role_spent = sum(p.get("paid_value", 0) for p in role_players)
                 with ui.column().classes("w-full mb-6 gap-2"):
-                    with ui.row().classes(
-                        "justify-between items-center w-full px-1"
-                    ):
-                        ui.label(
-                            f"{role.capitalize()} ({len(role_players)})"
-                        ).classes("text-lg font-bold text-slate-800")
+                    with ui.row().classes("justify-between items-center w-full px-1"):
+                        ui.label(f"{role.capitalize()} ({len(role_players)})").classes(
+                            "text-lg font-bold text-slate-800"
+                        )
                         ui.badge(
                             f"Subtotal: {role_spent} cr",
                             color="slate-800",
                             text_color="white",
                         )
 
-                    ui.table(
-                        columns=columns, rows=role_players, row_key="name"
-                    ).props("flat bordered dense").classes(
-                        "w-full bg-white border border-slate-200 rounded-lg shadow-sm"
-                    )
+                    ui.table(columns=columns, rows=role_players, row_key="name").props(
+                        "flat bordered dense"
+                    ).classes("w-full bg-white border border-slate-200 rounded-lg shadow-sm")
 
 
 # Routing Callbacks

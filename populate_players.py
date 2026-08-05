@@ -78,10 +78,10 @@ def populate_db(csv_file_path, db_path="db/player_dataset/players.db", table_nam
                     # Skip malformed data rows
                     continue
 
-    # Bulk insert into SQLite table
+    # OR IGNORE: duplicate names would otherwise abort the whole bulk insert
     cursor.executemany(
         f"""
-        INSERT INTO {table_name} (name, team, rating) 
+        INSERT OR IGNORE INTO {table_name} (name, team, rating)
         VALUES (?, ?, ?)
     """,
         players_to_insert,
@@ -93,7 +93,7 @@ def populate_db(csv_file_path, db_path="db/player_dataset/players.db", table_nam
 
 
 # Usage Example:
-populate_db('list/goalkeepers.csv', table_name='goalkeepers')
-populate_db('list/defenders.csv', table_name='defenders')
-populate_db('list/midfielders.csv', table_name='midfielders')
-populate_db('list/attackers.csv', table_name='attackers')
+populate_db("list/goalkeepers.csv", table_name="goalkeepers")
+populate_db("list/defenders.csv", table_name="defenders")
+populate_db("list/midfielders.csv", table_name="midfielders")
+populate_db("list/attackers.csv", table_name="attackers")
