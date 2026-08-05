@@ -52,6 +52,9 @@ def select_team_page():
 
 def render_role_page(role: str):
     """Generic helper function to build and manage role pages with dynamic price recalculation."""
+
+    ui.link("Back to home", "/").classes("mt-4 block")
+
     players = get_remaining_players_for_role(role)
     team_options = ["unassigned"] + get_all_teams()
 
@@ -116,8 +119,6 @@ def render_role_page(role: str):
                     sel.value, p, r, int(e.value or 0)
                 )
             )
-
-    ui.link("Back to home", "/").classes("mt-4 block")
 
 
 def goalkeepers_players_page():
