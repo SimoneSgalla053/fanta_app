@@ -1,5 +1,16 @@
 from nicegui import ui
 
+from populate_players import update_players
+
+try:
+    player_counts = update_players()
+    print(
+        "Player data updated: "
+        + ", ".join(f"{role}={count}" for role, count in player_counts.items())
+    )
+except Exception as error:
+    print(f"Player data update failed; using the existing local database: {error}")
+
 from backend import (
     calculate_maximum_price_for_player,
     calculate_remaining_credits_for_players,

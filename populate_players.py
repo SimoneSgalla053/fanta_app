@@ -1,99 +1,227 @@
 import csv
 import math
+import os
+import re
 import sqlite3
+import tempfile
+from html.parser import HTMLParser
+from pathlib import Path
+from urllib.request import Request, urlopen
 
 MIN_OUT = 10.0
 MAX_OUT = 100.0
 MAX_QT = 35.0  # Top Fantacalcio Qt.A ceiling
 K_EXP = 0.72  # Curve shape factor
 
+QUOTATIONS_URL = "https://www.fantacalcio.it/quotazioni-fantacalcio"
+CSV_HEADER = [
+    "Id",
+    "R",
+    "RM",
+    "Nome",
+    "Squadra",
+    "Qt.A",
+    "Qt.I",
+    "Diff.",
+    "Qt.A M",
+    "Qt.I M",
+    "Diff.M",
+    "FVM",
+    "FVM M",
+]
+ROLE_FILES = {
+    "P": ("goalkeepers", "goalkeepers.csv"),
+    "D": ("defenders", "defenders.csv"),
+    "C": ("midfielders", "midfielders.csv"),
+    "A": ("attackers", "attackers.csv"),
+}
+MINIMUM_ROLE_COUNTS = {"P": 20, "D": 50, "C": 50, "A": 50}
+
 
 def normalize_rating(qt_a: int) -> int:
-    """Normalizes Qt.A (1 to 35) to a score between 10 and 100 using a log-power curve."""
+    """Normalize Qt.A to a score between 10 and 100."""
     if qt_a <= 1:
         return int(MIN_OUT)
 
-    # Cap input to MAX_QT
-    val = min(float(qt_a), MAX_QT)
-
-    # Logarithmic progression normalized to 0.0 - 1.0 range
-    log_ratio = math.log(val) / math.log(MAX_QT)
-
-    # Apply power curve and scale to [10, 100] range
+    value = min(float(qt_a), MAX_QT)
+    log_ratio = math.log(value) / math.log(MAX_QT)
     normalized = MIN_OUT + (MAX_OUT - MIN_OUT) * (log_ratio**K_EXP)
-
     return round(normalized)
 
 
-def populate_db(csv_file_path, db_path="db/player_dataset/players.db", table_name="defenders"):
-    # Connect to SQLite database (creates file if it doesn't exist)
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+class QuotationsParser(HTMLParser):
+    """Parse the server-rendered Fantacalcio quotation table."""
 
-    cursor.execute(f"""
-            DROP TABLE IF EXISTS {table_name}
-        """)
+    def __init__(self) -> None:
+        super().__init__()
+        self.players: list[dict[str, str]] = []
+        self._player: dict[str, str] | None = None
+        self._field: str | None = None
+        self._parts: list[str] = []
 
-    # Create table dynamically
-    cursor.execute(f"""
-        CREATE TABLE IF NOT EXISTS {table_name} (
-            name TEXT PRIMARY KEY NOT NULL,
-            team TEXT NOT NULL,
-            rating INTEGER NOT NULL
-        )
-    """)
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        classes = set((attributes.get("class") or "").split())
 
-    players_to_insert = []
+        if tag == "tr" and "player-row" in classes:
+            self._player = {
+                "R": (attributes.get("data-filter-role-classic") or "").upper(),
+                "RM": attributes.get("data-filter-role-mantra") or "",
+            }
+            return
+        if self._player is None:
+            return
 
-    # Open and parse the CSV file
-    with open(csv_file_path, mode="r", encoding="latin-1") as file:
-        # Skip header lines if necessary, then read using CSV reader with semicolon delimiter
-        reader = csv.reader(file, delimiter=";")
+        if tag == "a" and "player-link" in classes:
+            href = attributes.get("href") or ""
+            match = re.search(r"/squadre/([^/]+)/[^/]+/(\d+)$", href)
+            if match:
+                self._player["Squadra"] = match.group(1).replace("-", " ").title()
+                self._player["Id"] = match.group(2)
+        elif tag in {"th", "td"}:
+            field_by_class = {
+                "player-name": "Nome",
+                "player-team": "Squadra breve",
+                "player-classic-initial-price": "Qt.I",
+                "player-classic-current-price": "Qt.A",
+                "player-classic-fvm": "FVM",
+                "player-mantra-initial-price": "Qt.I M",
+                "player-mantra-current-price": "Qt.A M",
+                "player-mantra-fvm": "FVM M",
+            }
+            self._field = next(
+                (field_by_class[name] for name in classes if name in field_by_class), None
+            )
+            self._parts = []
 
-        header = None
-        for row in reader:
-            # Skip empty lines or title lines
-            if not row or len(row) < 7:
-                continue
+    def handle_data(self, data: str) -> None:
+        if self._player is not None and self._field:
+            self._parts.append(data)
 
-            # Identify header row to dynamically locate column indices
-            if "Nome" in row and "Squadra" in row and "Qt.A" in row:
-                header = row
-                name_idx = header.index("Nome")
-                team_idx = header.index("Squadra")
-                rating_idx = header.index("Qt.A")
-                continue
+    def handle_endtag(self, tag: str) -> None:
+        if self._player is None:
+            return
+        if tag in {"th", "td"} and self._field:
+            value = " ".join("".join(self._parts).split())
+            if value and (self._field != "Squadra breve" or "Squadra" not in self._player):
+                self._player[self._field] = value
+            self._field = None
+            self._parts = []
+        elif tag == "tr":
+            if all(key in self._player for key in ("Id", "R", "Nome", "Squadra", "Qt.A")):
+                self.players.append(self._player)
+            self._player = None
 
-            # Extract target values when header is set
-            if header:
-                try:
-                    name = row[name_idx].strip()
-                    team = row[team_idx].strip()
-                    rating = int(row[rating_idx].strip())
 
-                    normalized_score = normalize_rating(rating)
-
-                    players_to_insert.append((name, team, normalized_score))
-                except (ValueError, IndexError):
-                    # Skip malformed data rows
-                    continue
-
-    # OR IGNORE: duplicate names would otherwise abort the whole bulk insert
-    cursor.executemany(
-        f"""
-        INSERT OR IGNORE INTO {table_name} (name, team, rating)
-        VALUES (?, ?, ?)
-    """,
-        players_to_insert,
+def download_latest_players(timeout: float = 20.0) -> dict[str, list[list[str]]]:
+    request = Request(
+        QUOTATIONS_URL,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; FantaApp/1.0)"},
     )
+    with urlopen(request, timeout=timeout) as response:
+        html = response.read().decode("utf-8")
 
-    conn.commit()
-    conn.close()
-    print(f"Successfully inserted {len(players_to_insert)} players into '{table_name}' table.")
+    parser = QuotationsParser()
+    parser.feed(html)
+
+    rows_by_role = {role: [] for role in ROLE_FILES}
+    for player in parser.players:
+        role = player["R"]
+        if role not in rows_by_role:
+            continue
+        try:
+            current = int(player["Qt.A"])
+            initial = int(player["Qt.I"])
+            mantra_current = int(player["Qt.A M"])
+            mantra_initial = int(player["Qt.I M"])
+        except (KeyError, ValueError):
+            continue
+        rows_by_role[role].append(
+            [
+                player["Id"],
+                role,
+                player.get("RM", ""),
+                player["Nome"],
+                player["Squadra"],
+                str(current),
+                str(initial),
+                str(current - initial),
+                str(mantra_current),
+                str(mantra_initial),
+                str(mantra_current - mantra_initial),
+                player.get("FVM", "0"),
+                player.get("FVM M", "0"),
+            ]
+        )
+
+    for role, minimum in MINIMUM_ROLE_COUNTS.items():
+        if len(rows_by_role[role]) < minimum:
+            raise ValueError(
+                f"Downloaded data failed validation for role {role}: "
+                f"found {len(rows_by_role[role])}, expected at least {minimum}"
+            )
+    return rows_by_role
 
 
-# Usage Example:
-populate_db("list/goalkeepers.csv", table_name="goalkeepers")
-populate_db("list/defenders.csv", table_name="defenders")
-populate_db("list/midfielders.csv", table_name="midfielders")
-populate_db("list/attackers.csv", table_name="attackers")
+def _write_csv_files(rows_by_role: dict[str, list[list[str]]], list_dir: Path) -> None:
+    list_dir.mkdir(parents=True, exist_ok=True)
+    temporary_files: list[tuple[Path, Path]] = []
+    try:
+        for role, (_, filename) in ROLE_FILES.items():
+            destination = list_dir / filename
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                newline="",
+                dir=list_dir,
+                prefix=f".{filename}.",
+                delete=False,
+            ) as file:
+                writer = csv.writer(file, delimiter=";", lineterminator="\n")
+                writer.writerow(["Quotazioni Fantacalcio - aggiornamento automatico"] + [""] * 12)
+                writer.writerow(CSV_HEADER)
+                writer.writerows(rows_by_role[role])
+                temporary_files.append((Path(file.name), destination))
+
+        for temporary, destination in temporary_files:
+            os.replace(temporary, destination)
+    finally:
+        for temporary, _ in temporary_files:
+            temporary.unlink(missing_ok=True)
+
+
+def _rebuild_database(rows_by_role: dict[str, list[list[str]]], db_path: Path) -> None:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as connection:
+        for role, (table_name, _) in ROLE_FILES.items():
+            connection.execute(f"DROP TABLE IF EXISTS {table_name}")
+            connection.execute(f"""
+                CREATE TABLE {table_name} (
+                    name TEXT PRIMARY KEY NOT NULL,
+                    team TEXT NOT NULL,
+                    rating INTEGER NOT NULL
+                )
+                """)
+            players = [
+                (row[3], row[4], normalize_rating(int(row[5]))) for row in rows_by_role[role]
+            ]
+            connection.executemany(
+                f"INSERT OR IGNORE INTO {table_name} (name, team, rating) VALUES (?, ?, ?)",
+                players,
+            )
+
+
+def update_players(base_dir: str | Path | None = None) -> dict[str, int]:
+    """Download current quotations, save role CSVs, and rebuild the player database."""
+    project_dir = Path(base_dir) if base_dir else Path(__file__).resolve().parent
+    rows_by_role = download_latest_players()
+    _write_csv_files(rows_by_role, project_dir / "list")
+    _rebuild_database(rows_by_role, project_dir / "db/player_dataset/players.db")
+    return {ROLE_FILES[role][0]: len(rows) for role, rows in rows_by_role.items()}
+
+
+if __name__ == "__main__":
+    counts = update_players()
+    print(
+        "Player database updated: " + ", ".join(f"{role}={count}" for role, count in counts.items())
+    )
