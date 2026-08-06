@@ -679,6 +679,7 @@ def team_detail(team_name: str):
 
 
 def root():
+    ui.query(".nicegui-content").classes("p-0 gap-0")
     ui.sub_pages(
         {
             "/": index,
@@ -692,4 +693,10 @@ def root():
     ).classes("w-full")
 
 
-ui.run(root, port=int(os.getenv("PORT", "8080")), reload=False)
+ui.run(
+    root,
+    title="FantaSgalla",
+    favicon=Path(__file__).resolve().parent / "favicon.svg",
+    port=int(os.getenv("PORT", "8080")),
+    reload=False,
+)
